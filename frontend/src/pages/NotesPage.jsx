@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback } from "react";
 import api from "@/api/client";
+import { useAgent } from "@/context/AgentContext";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Trash2, Plus } from "lucide-react";
+import { Trash2, Plus, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 export default function NotesPage() {
@@ -10,6 +11,9 @@ export default function NotesPage() {
   const [selected, setSelected] = useState(null);
   const [draft, setDraft] = useState({ title: "", content: "" });
   const [saving, setSaving] = useState(false);
+  const [reflection, setReflection] = useState("");
+  const [reflecting, setReflecting] = useState(false);
+  const { invalidations } = useAgent();
 
   const load = useCallback(async () => {
     const { data } = await api.get("/notes");
@@ -18,18 +22,20 @@ export default function NotesPage() {
       if (prev) return prev;
       if (data.length) {
         setDraft({ title: data[0].title, content: data[0].content });
+        setReflection(data[0].reflection || "");
         return data[0].id;
       }
       return null;
     });
   }, []);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load, invalidations.notes]);
 
   const createNew = async () => {
     const { data } = await api.post("/notes", { title: "Untitled", content: "" });
     setNotes([data, ...notes]);
     setSelected(data.id);
     setDraft({ title: data.title, content: data.content });
+    setReflection("");
     toast.success("Note created");
   };
 
@@ -50,6 +56,7 @@ export default function NotesPage() {
       const next = remaining[0];
       setSelected(next?.id || null);
       setDraft(next ? { title: next.title, content: next.content } : { title: "", content: "" });
+      setReflection(next?.reflection || "");
     }
     toast.success("Deleted");
   };
@@ -57,6 +64,27 @@ export default function NotesPage() {
   const select = (n) => {
     setSelected(n.id);
     setDraft({ title: n.title, content: n.content });
+    setReflection(n.reflection || "");
+  };
+
+  const askAgent = async (save_it = false) => {
+    if (!selected) return;
+    // Save any unsaved edits first so the agent reads the latest content
+    if (draft.title !== (notes.find((n) => n.id === selected)?.title || "") ||
+        draft.content !== (notes.find((n) => n.id === selected)?.content || "")) {
+      await api.patch(`/notes/${selected}`, draft);
+    }
+    setReflecting(true);
+    try {
+      const { data } = await api.post("/agent/reflect-note", { note_id: selected, save: save_it });
+      setReflection(data.reflection);
+      if (save_it) toast.success("Reflection saved to note");
+      if (save_it) load();
+    } catch {
+      toast.error("Could not get reflection");
+    } finally {
+      setReflecting(false);
+    }
   };
 
   return (
@@ -74,9 +102,7 @@ export default function NotesPage() {
         </div>
         <div className="flex-1 overflow-auto">
           {notes.length === 0 ? (
-            <div className="p-6 text-sm text-muted-foreground">
-              No notes yet. Start expressing.
-            </div>
+            <div className="p-6 text-sm text-muted-foreground">No notes yet. Start expressing.</div>
           ) : (
             <ul className="divide-y divide-border">
               {notes.map((n) => (
@@ -100,13 +126,13 @@ export default function NotesPage() {
       <section className="border border-border rounded-xl bg-card flex flex-col overflow-hidden">
         {selected ? (
           <>
-            <div className="p-6 hairline-b border-b border-border flex items-center gap-3">
+            <div className="p-6 hairline-b border-b border-border flex items-center gap-3 flex-wrap">
               <Input
                 data-testid="note-title-input"
                 value={draft.title}
                 onChange={(e) => setDraft({ ...draft, title: e.target.value })}
                 placeholder="Title"
-                className="text-xl font-semibold border-0 shadow-none focus-visible:ring-0 px-0 font-display"
+                className="text-xl font-semibold border-0 shadow-none focus-visible:ring-0 px-0 font-display flex-1 min-w-0"
               />
               <button
                 data-testid="save-note-button"
@@ -116,20 +142,50 @@ export default function NotesPage() {
                 {saving ? "Saving…" : "Save"}
               </button>
               <button
+                data-testid="reflect-note-button"
+                onClick={() => askAgent(false)} disabled={reflecting}
+                className="text-xs font-semibold px-3 py-1.5 rounded-full border border-[color:hsl(var(--accent))] text-[color:hsl(var(--accent))] hover:bg-[color:hsl(var(--accent))] hover:text-white transition-colors disabled:opacity-60 inline-flex items-center gap-1.5"
+              >
+                <Sparkles className="w-3.5 h-3.5" /> {reflecting ? "Reflecting…" : "Ask agent"}
+              </button>
+              <button
                 data-testid="delete-note-button"
                 onClick={() => remove(selected)}
                 className="text-muted-foreground hover:text-[color:hsl(var(--destructive))]"
+                aria-label="delete-note"
               >
                 <Trash2 className="w-4 h-4" />
               </button>
             </div>
-            <Textarea
-              data-testid="note-content-input"
-              value={draft.content}
-              onChange={(e) => setDraft({ ...draft, content: e.target.value })}
-              placeholder="Start writing…"
-              className="flex-1 border-0 shadow-none focus-visible:ring-0 rounded-none text-base leading-relaxed p-6 resize-none"
-            />
+
+            <div className="flex-1 flex flex-col min-h-0 overflow-auto">
+              <Textarea
+                data-testid="note-content-input"
+                value={draft.content}
+                onChange={(e) => setDraft({ ...draft, content: e.target.value })}
+                placeholder="Start writing…"
+                className="border-0 shadow-none focus-visible:ring-0 rounded-none text-base leading-relaxed p-6 resize-none min-h-[300px]"
+              />
+
+              {reflection && (
+                <div className="p-6 border-t border-border bg-[color:hsl(var(--secondary))]" data-testid="note-reflection">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="overline">Agent reflection</div>
+                    <button
+                      data-testid="save-reflection-button"
+                      onClick={() => askAgent(true)}
+                      disabled={reflecting}
+                      className="text-xs font-semibold px-3 py-1 rounded-full border border-border hover:border-foreground/40 disabled:opacity-60"
+                    >
+                      Save to note
+                    </button>
+                  </div>
+                  <div className="text-sm leading-relaxed whitespace-pre-wrap text-foreground/90">
+                    {reflection}
+                  </div>
+                </div>
+              )}
+            </div>
           </>
         ) : (
           <div className="flex-1 grid place-items-center text-muted-foreground">

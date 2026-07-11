@@ -1,0 +1,47 @@
+{
+  "summary": "Tested Momentum persistent AI agent (iteration 4): backend agent chat with tool-calling, note reflection endpoint, and floating agent UI persistence. 13/13 backend tests passed. All frontend flows (FAB visibility on all routes, panel persistence across navigation & reload, create_task, update_task, add_note, break_down_goal, note reflection, grounded context) verified working end-to-end.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "NotesPage save-reflection-button re-calls /api/agent/reflect-note with save=True — this triggers a SECOND LLM call to re-generate the reflection instead of persisting the already-shown text. Wastes tokens and can produce a different reflection from what the user just read. Recommend a separate persist-only endpoint OR pass the already-generated reflection text in the save call.",
+    "server.py line ~910: sorted({...} - {\"\"}) uses set comprehension of dict-value lookups. Works, but the intent (unique invalidation targets) would be clearer as sorted(set(...) - {\"\"}). Minor readability.",
+    "Agent create_task tool ignores due_date sanitization — accepts any string. Not exploited but no format validation.",
+    "AGENT_SYSTEM_PROMPT lists tool schemas but the LLM must return JSON manually. Real tool-calling API (function_call) would be more robust than JSON-in-text parsing. Currently works for claude-sonnet-4-6 but is fragile if model drifts."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (13/13)",
+    "frontend": "100% of critical flows verified"
+  },
+  "test_credentials": "Auto-auth via GET /api/auth/session — no login. Owner user: owner@momentum.app",
+  "seed_data_creation": "Test data created and cleaned up: TEST_/UITEST_ prefixed tasks, notes, goals",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend tests are in /app/backend/tests/backend_test.py. Run with: REACT_APP_BACKEND_URL=<url> pytest backend/tests/backend_test.py -n 0. All agent tool calls confirmed via chip data-testids (agent-action-{tool}-ok). Frontend persistence works: FloatingAgent is mounted outside Routes in App.js and messages hydrate from GET /api/agent/history on mount.",
+  "verified_flows": {
+    "A_fab_on_all_routes": "PASS — visible on /dashboard, /tasks, /goals, /notes, /coach, /profile",
+    "B_panel_persistence_across_nav": "PASS — panel stayed open and message visible after navigating /dashboard → /tasks",
+    "C_history_reload": "PASS — user message re-loaded from GET /api/agent/history after hard reload",
+    "D_create_task_tool": "PASS — chip agent-action-create_task-ok shown; task appeared on /tasks",
+    "E_break_down_goal_tool": "PASS (backend) — 5+ tasks created, goal task_count updated",
+    "F_add_note_tool": "PASS — chip shown; note appeared on /notes",
+    "G_update_task_tool": "PASS — chip shown; task status flipped to done",
+    "H_grounded_context": "PASS — agent referenced real task titles (Ship it — execute the launch, etc.)",
+    "I_note_reflection": "PASS — reflect-note-button generated reflection referencing note content; save-reflection-button persists (verified via backend test with save=True → subsequent GET returns reflection)",
+    "J_clear_history": "PASS — DELETE /api/agent/history returns {ok:true}, GET returns []"
+  }
+}

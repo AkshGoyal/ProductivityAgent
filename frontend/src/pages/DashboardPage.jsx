@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import api from "@/api/client";
 import { useAuth } from "@/context/AuthContext";
+import { useAgent } from "@/context/AgentContext";
 import { Link } from "react-router-dom";
 import { ArrowUpRight, Target, ListTodo, NotebookPen, Sparkles } from "lucide-react";
 
@@ -9,6 +10,7 @@ export default function DashboardPage() {
   const [stats, setStats] = useState(null);
   const [openTasks, setOpenTasks] = useState([]);
   const [goals, setGoals] = useState([]);
+  const { invalidations } = useAgent();
 
   useEffect(() => {
     (async () => {
@@ -21,7 +23,7 @@ export default function DashboardPage() {
       setOpenTasks(t.data.filter((x) => x.status !== "done").slice(0, 6));
       setGoals(g.data.slice(0, 3));
     })();
-  }, []);
+  }, [invalidations.tasks, invalidations.goals, invalidations.notes]);
 
   return (
     <div className="space-y-10" data-testid="dashboard-page">

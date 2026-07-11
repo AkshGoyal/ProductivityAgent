@@ -165,6 +165,7 @@ class NoteUpdate(BaseModel):
     title: Optional[str] = None
     content: Optional[str] = None
     mood: Optional[str] = None
+    reflection: Optional[str] = None
 
 
 class ChatIn(BaseModel):
@@ -174,6 +175,15 @@ class ChatIn(BaseModel):
 
 class GoalBreakdownIn(BaseModel):
     goal_id: str
+
+
+class AgentChatIn(BaseModel):
+    message: str
+
+
+class NoteReflectIn(BaseModel):
+    note_id: str
+    save: bool = False
 
 
 # -------------------- Auth Routes --------------------
@@ -607,6 +617,349 @@ async def clear_history(user: dict = Depends(get_current_user)):
     return {"ok": True}
 
 
+# -------------------- AI Agent (persistent companion with tools) --------------------
+AGENT_SYSTEM_PROMPT = """You are Momentum — a persistent productivity companion and brainstorming partner for a single user.
+You help them ideate, plan their day, break down goals, weigh decisions, and reflect on their thoughts — always grounded in THEIR actual working style, mindset, tasks, goals, and notes (all supplied to you on every turn).
+
+Voice: warm but direct. Concrete over preachy. Ask sharp questions. Push back when they're avoiding hard things. Never invent data — if you don't see it in the context, say so.
+
+You have TOOLS. When the user asks you to do something in their workspace (create a task, break down a goal, capture a note, update a task's status/priority), you MUST take that action via a tool call — do not just describe it.
+
+RESPONSE FORMAT — return STRICT JSON only, no markdown fences, no prose outside the JSON:
+{
+  "reply": "<your natural-language response to the user, 1-6 short paragraphs or bullets>",
+  "actions": [
+    {"tool": "create_task", "args": {"title": "string", "description": "string (optional)", "priority": "low|medium|high", "goal_id": "string (optional)", "estimated_minutes": 60}},
+    {"tool": "update_task", "args": {"task_id": "string", "status": "todo|in_progress|done", "priority": "low|medium|high"}},
+    {"tool": "break_down_goal", "args": {"goal_id": "string"}},
+    {"tool": "add_note", "args": {"title": "string", "content": "string"}}
+  ]
+}
+
+Rules:
+- `actions` is a list; use [] if no action is warranted.
+- Only include tool args that you actually want to set. Omit optional args if unsure.
+- For `break_down_goal`, the goal MUST already exist in the user's goals list — reference it by id from the context.
+- For `update_task`, use task ids from the OPEN TASKS list in the context.
+- Never fabricate task_ids or goal_ids.
+- Keep replies tight and useful. Bullets when listing options, prose when reflecting."""
+
+
+async def _load_agent_context(user: dict) -> str:
+    uid = user["id"]
+    open_tasks = await db.tasks.find(
+        {"user_id": uid, "status": {"$ne": "done"}},
+        {"_id": 0, "id": 1, "title": 1, "priority": 1, "status": 1, "due_date": 1, "goal_id": 1},
+    ).sort("created_at", -1).to_list(30)
+    goals = await db.goals.find(
+        {"user_id": uid, "status": "active"},
+        {"_id": 0, "id": 1, "title": 1, "description": 1, "target_date": 1},
+    ).sort("created_at", -1).to_list(20)
+    # Attach subtasks to each goal
+    for g in goals:
+        subs = await db.tasks.find(
+            {"user_id": uid, "goal_id": g["id"]},
+            {"_id": 0, "id": 1, "title": 1, "status": 1, "priority": 1},
+        ).to_list(50)
+        g["subtasks"] = subs
+    notes = await db.notes.find(
+        {"user_id": uid},
+        {"_id": 0, "id": 1, "title": 1, "content": 1, "created_at": 1},
+    ).sort("created_at", -1).to_list(10)
+
+    import json as _json
+    ctx = build_user_context(user) + "\n"
+    ctx += "ACTIVE GOALS (with subtasks):\n"
+    ctx += _json.dumps(goals, indent=2, default=str)[:4000] + "\n\n"
+    ctx += "OPEN TASKS:\n"
+    ctx += _json.dumps(open_tasks, indent=2, default=str)[:3000] + "\n\n"
+    ctx += "RECENT NOTES (last 10):\n"
+    ctx += _json.dumps(notes, indent=2, default=str)[:4000]
+    return ctx
+
+
+async def _agent_history(user: dict, limit: int = 20) -> list:
+    msgs = await db.agent_messages.find(
+        {"user_id": user["id"]},
+        {"_id": 0, "role": 1, "content": 1, "created_at": 1},
+    ).sort("created_at", 1).to_list(limit * 2)
+    return msgs[-limit:] if len(msgs) > limit else msgs
+
+
+async def _run_tool(user: dict, tool: str, args: dict) -> dict:
+    """Execute a single tool call. Returns a structured result: {tool, status, result?, error?}"""
+    try:
+        if tool == "create_task":
+            title = str(args.get("title", "")).strip()
+            if not title:
+                return {"tool": tool, "status": "error", "error": "title required"}
+            priority = args.get("priority") if args.get("priority") in ("low", "medium", "high") else "medium"
+            doc = {
+                "id": str(uuid.uuid4()),
+                "user_id": user["id"],
+                "title": title[:200],
+                "description": str(args.get("description", "")),
+                "priority": priority,
+                "status": "todo",
+                "due_date": args.get("due_date"),
+                "goal_id": args.get("goal_id"),
+                "estimated_minutes": int(args.get("estimated_minutes", 60)) if isinstance(args.get("estimated_minutes"), (int, float)) else 60,
+                "created_at": iso(now_utc()),
+                "updated_at": iso(now_utc()),
+            }
+            await db.tasks.insert_one(doc)
+            doc.pop("_id", None)
+            return {"tool": tool, "status": "ok", "result": doc, "summary": f"Created task: {doc['title']}"}
+
+        if tool == "update_task":
+            task_id = args.get("task_id")
+            if not task_id:
+                return {"tool": tool, "status": "error", "error": "task_id required"}
+            patch = {}
+            if args.get("status") in ("todo", "in_progress", "done"):
+                patch["status"] = args["status"]
+            if args.get("priority") in ("low", "medium", "high"):
+                patch["priority"] = args["priority"]
+            if not patch:
+                return {"tool": tool, "status": "error", "error": "no valid fields to update"}
+            patch["updated_at"] = iso(now_utc())
+            r = await db.tasks.update_one({"id": task_id, "user_id": user["id"]}, {"$set": patch})
+            if r.matched_count == 0:
+                return {"tool": tool, "status": "error", "error": "task not found"}
+            task = await db.tasks.find_one({"id": task_id}, {"_id": 0})
+            return {"tool": tool, "status": "ok", "result": task, "summary": f"Updated task: {task['title']} → {patch.get('status', patch.get('priority'))}"}
+
+        if tool == "add_note":
+            content = str(args.get("content", "")).strip()
+            if not content:
+                return {"tool": tool, "status": "error", "error": "content required"}
+            doc = {
+                "id": str(uuid.uuid4()),
+                "user_id": user["id"],
+                "title": str(args.get("title", "")).strip() or "From agent",
+                "content": content,
+                "mood": args.get("mood"),
+                "created_at": iso(now_utc()),
+                "updated_at": iso(now_utc()),
+            }
+            await db.notes.insert_one(doc)
+            doc.pop("_id", None)
+            return {"tool": tool, "status": "ok", "result": doc, "summary": f"Added note: {doc['title']}"}
+
+        if tool == "break_down_goal":
+            goal_id = args.get("goal_id")
+            if not goal_id:
+                return {"tool": tool, "status": "error", "error": "goal_id required"}
+            goal = await db.goals.find_one({"id": goal_id, "user_id": user["id"]}, {"_id": 0})
+            if not goal:
+                return {"tool": tool, "status": "error", "error": "goal not found"}
+            # Reuse the existing goal-breakdown logic inline
+            ctx = build_user_context(user)
+            system = (
+                "You are Momentum. Break the goal into 5-8 concrete, atomic tasks tailored to the user's working style. "
+                "Return STRICT JSON: {\"tasks\":[{\"title\":\"...\",\"description\":\"...\",\"priority\":\"low|medium|high\",\"estimated_minutes\":60}]}"
+            )
+            prompt = f"{ctx}\nGOAL: {goal['title']}\nDESCRIPTION: {goal.get('description','')}\nTARGET DATE: {goal.get('target_date') or 'not set'}"
+            sub_chat = LlmChat(
+                api_key=EMERGENT_LLM_KEY,
+                session_id=f"agent-breakdown-{uuid.uuid4()}",
+                system_message=system,
+            ).with_model("anthropic", "claude-sonnet-4-6")
+            collected = ""
+            async for ev in sub_chat.stream_message(UserMessage(text=prompt)):
+                if isinstance(ev, TextDelta):
+                    collected += ev.content
+                elif isinstance(ev, StreamDone):
+                    break
+            import json as _json, re as _re
+            m = _re.search(r"\{[\s\S]*\}", collected)
+            if not m:
+                return {"tool": tool, "status": "error", "error": "AI response not parseable"}
+            parsed = _json.loads(m.group(0))
+            created = []
+            for t in parsed.get("tasks", []):
+                doc = {
+                    "id": str(uuid.uuid4()),
+                    "user_id": user["id"],
+                    "goal_id": goal["id"],
+                    "title": str(t.get("title", "Untitled"))[:200],
+                    "description": str(t.get("description", "")),
+                    "priority": t.get("priority") if t.get("priority") in ("low", "medium", "high") else "medium",
+                    "status": "todo",
+                    "due_date": None,
+                    "estimated_minutes": int(t.get("estimated_minutes", 60)) if isinstance(t.get("estimated_minutes"), (int, float)) else 60,
+                    "created_at": iso(now_utc()),
+                    "updated_at": iso(now_utc()),
+                }
+                await db.tasks.insert_one(doc)
+                doc.pop("_id", None)
+                created.append(doc)
+            return {"tool": tool, "status": "ok", "result": {"goal_id": goal_id, "tasks": created}, "summary": f"Broke down '{goal['title']}' into {len(created)} tasks"}
+
+        return {"tool": tool, "status": "error", "error": f"unknown tool: {tool}"}
+    except Exception as e:
+        logger.exception("tool execution failed")
+        return {"tool": tool, "status": "error", "error": str(e)}
+
+
+async def _call_agent_llm(system: str, history: list, user_message: str) -> str:
+    """Send to LLM with compressed history; return full text (agent expects JSON)."""
+    convo_str = "\n".join(f"{m['role'].upper()}: {m['content']}" for m in history)[-6000:]
+    combined_system = system + "\n\n---PRIOR CONVERSATION---\n" + convo_str if convo_str else system
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"agent-{uuid.uuid4()}",
+        system_message=combined_system,
+    ).with_model("anthropic", "claude-sonnet-4-6")
+    collected = ""
+    async for ev in chat.stream_message(UserMessage(text=user_message)):
+        if isinstance(ev, TextDelta):
+            collected += ev.content
+        elif isinstance(ev, StreamDone):
+            break
+    return collected
+
+
+@api.get("/agent/history")
+async def agent_history(user: dict = Depends(get_current_user), limit: int = 200):
+    msgs = await db.agent_messages.find(
+        {"user_id": user["id"]}, {"_id": 0}
+    ).sort("created_at", 1).to_list(limit)
+    return msgs
+
+
+@api.delete("/agent/history")
+async def clear_agent_history(user: dict = Depends(get_current_user)):
+    await db.agent_messages.delete_many({"user_id": user["id"]})
+    return {"ok": True}
+
+
+@api.post("/agent/chat")
+async def agent_chat(payload: AgentChatIn, user: dict = Depends(get_current_user)):
+    text = payload.message.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="message is required")
+
+    # Persist user turn
+    user_msg = {
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "role": "user",
+        "content": text,
+        "actions": [],
+        "created_at": iso(now_utc()),
+    }
+    await db.agent_messages.insert_one(user_msg)
+
+    ctx = await _load_agent_context(user)
+    history = await _agent_history(user, limit=20)
+    system = AGENT_SYSTEM_PROMPT + "\n\n---LIVE CONTEXT (regenerated every turn)---\n" + ctx
+
+    raw = ""
+    try:
+        raw = await _call_agent_llm(system, history[:-1], text)
+    except Exception as e:
+        logger.exception("agent llm call failed")
+        raise HTTPException(status_code=500, detail=f"Agent LLM error: {e}")
+
+    import json as _json, re as _re
+    reply_text = raw.strip()
+    actions_to_run = []
+    # Extract JSON (tolerate code fences)
+    m = _re.search(r"\{[\s\S]*\}", raw)
+    if m:
+        try:
+            parsed = _json.loads(m.group(0))
+            if isinstance(parsed, dict):
+                reply_text = str(parsed.get("reply", raw)).strip()
+                acts = parsed.get("actions", [])
+                if isinstance(acts, list):
+                    actions_to_run = acts
+        except Exception:
+            # Fall back to raw text as reply, no actions
+            pass
+
+    # Execute actions
+    action_results = []
+    for act in actions_to_run:
+        if not isinstance(act, dict):
+            continue
+        tool = act.get("tool")
+        args = act.get("args") or {}
+        if not tool:
+            continue
+        result = await _run_tool(user, tool, args)
+        action_results.append(result)
+
+    # Persist assistant turn
+    assistant_msg = {
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "role": "assistant",
+        "content": reply_text,
+        "actions": action_results,
+        "created_at": iso(now_utc()),
+    }
+    await db.agent_messages.insert_one(assistant_msg)
+    assistant_msg.pop("_id", None)
+
+    return {
+        "assistant": assistant_msg,
+        "actions": action_results,
+        # Hints for the frontend on what to refresh
+        "invalidate": sorted({
+            {"create_task": "tasks", "update_task": "tasks", "break_down_goal": "goals",
+             "add_note": "notes"}.get(a.get("tool"), "")
+            for a in action_results if a.get("status") == "ok"
+        } - {""}),
+    }
+
+
+@api.post("/agent/reflect-note")
+async def reflect_note(payload: NoteReflectIn, user: dict = Depends(get_current_user)):
+    note = await db.notes.find_one({"id": payload.note_id, "user_id": user["id"]}, {"_id": 0})
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    ctx = build_user_context(user)
+    system = (
+        "You are Momentum reflecting on a personal note the user wrote. "
+        "Read it carefully. Return a short, honest, warm response (150-250 words): "
+        "name the emotion or pattern you notice, mirror what they seem to be working through, "
+        "and offer ONE grounded question or next step tailored to their working style and mindset. "
+        "Return PLAIN TEXT only — no JSON, no markdown headers."
+    )
+    prompt = (
+        f"{ctx}\n\n"
+        f"NOTE TITLE: {note.get('title','') or 'Untitled'}\n"
+        f"NOTE CONTENT:\n{note['content']}\n"
+    )
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"reflect-{payload.note_id}-{uuid.uuid4()}",
+        system_message=system,
+    ).with_model("anthropic", "claude-sonnet-4-6")
+    reflection = ""
+    try:
+        async for ev in chat.stream_message(UserMessage(text=prompt)):
+            if isinstance(ev, TextDelta):
+                reflection += ev.content
+            elif isinstance(ev, StreamDone):
+                break
+    except Exception as e:
+        logger.exception("reflect-note failed")
+        raise HTTPException(status_code=500, detail=f"AI error: {e}")
+
+    reflection = reflection.strip()
+    if payload.save:
+        await db.notes.update_one(
+            {"id": payload.note_id, "user_id": user["id"]},
+            {"$set": {"reflection": reflection, "updated_at": iso(now_utc())}},
+        )
+    return {"reflection": reflection, "saved": payload.save}
+
+
+
 # -------------------- Health --------------------
 @api.get("/")
 async def root():
@@ -632,6 +985,7 @@ async def startup():
     await db.goals.create_index([("user_id", 1), ("status", 1)])
     await db.notes.create_index("user_id")
     await db.chat_messages.create_index([("user_id", 1), ("created_at", 1)])
+    await db.agent_messages.create_index([("user_id", 1), ("created_at", 1)])
     # Seed default owner user for single-user mode (idempotent)
     existing = await db.users.find_one({"email": DEFAULT_USER_EMAIL})
     if not existing:

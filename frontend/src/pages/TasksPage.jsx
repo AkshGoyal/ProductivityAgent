@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import api from "@/api/client";
+import { useAgent } from "@/context/AgentContext";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -16,12 +17,13 @@ export default function TasksPage() {
   const [filter, setFilter] = useState("all");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ title: "", description: "", priority: "medium", due_date: "" });
+  const { invalidations } = useAgent();
 
   const load = useCallback(async () => {
     const { data } = await api.get("/tasks");
     setTasks(data);
   }, []);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load, invalidations.tasks]);
 
   const create = async (e) => {
     e.preventDefault();
