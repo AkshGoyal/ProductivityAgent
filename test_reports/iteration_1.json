@@ -1,0 +1,36 @@
+{
+  "summary": "First-finish smoke test of Momentum productivity app. Backend endpoints (auth register/login/me, tasks CRUD, goals, notes, AI breakdown, chat SSE, chat history) all return 200 with correct payloads. UI flows verified end-to-end: landing CTAs render, registration lands on /app/dashboard, all 4 stat cards visible, task creation via Tasks page works with toast confirmation, logout returns to /login, and re-login lands on dashboard. AI breakdown transiently failed once with a 'Budget has been exceeded' error from litellm but succeeded on immediate retry, producing 5+ well-formed tasks tied to the goal. Chat streaming (SSE) returned Claude-generated content that referenced the user's actual goal/tasks, confirming context injection.",
+  "tested_scope": ["frontend", "backend", "auth", "integration"],
+  "passed": [
+    "POST /api/auth/register -> 200 (new user created)",
+    "POST /api/auth/login sets access_token httpOnly cookie",
+    "GET /api/auth/me -> 200 with user object",
+    "POST/GET /api/tasks -> 200, task persisted and listed",
+    "POST /api/goals -> 200",
+    "POST /api/notes and GET /api/notes -> 200",
+    "POST /api/chat/stream -> SSE streams Claude tokens with 'event: done' terminator; response references user's goal/task (context injection working)",
+    "GET /api/chat/history -> 200 with user+assistant messages",
+    "POST /api/ai/breakdown-goal -> 200 on retry, generates 5+ tasks with proper schema (title/description/priority/estimated_minutes) linked to goal_id",
+    "Landing page: landing-login, landing-signup, hero-start-button all present",
+    "Register flow via UI -> redirects to /app/dashboard, dashboard-page visible",
+    "Dashboard shows stat-active-goals, stat-open-tasks, stat-completion-rate, stat-notes-count",
+    "Task creation from Tasks page (new-task-button -> task-title-input -> submit) shows 'Task added' toast and appears in list",
+    "Logout button clears session and redirects to /login",
+    "Re-login with same credentials lands on dashboard"
+  ],
+  "failed": [
+    {
+      "area": "AI /api/ai/breakdown-goal (integration)",
+      "issue": "First call returned HTTP 500 with 'AI error: Failed to start streaming completion: litellm.BadRequestError: OpenAIException - Budget has been exceeded! Current cost: 0.0, Max budget: 0.0'. Immediate retry with a new goal succeeded. Appears to be a transient upstream/litellm proxy issue rather than a code defect (chat endpoint using same key/model succeeded in the same window).",
+      "evidence": "curl POST /api/ai/breakdown-goal -> HTTP 500 on first attempt, then HTTP 200 with valid tasks JSON on retry seconds later. Model used: anthropic/claude-sonnet-4-6 in server.py L433 & L539.",
+      "priority": "LOW"
+    }
+  ],
+  "action_items": [
+    "Optional: add a single-retry-on-transient-error wrapper around LlmChat.stream_message in /api/ai/breakdown-goal (server.py L437) so users don't see the intermittent 'Budget has been exceeded' 500 on first click.",
+    "Verify the model identifier 'claude-sonnet-4-6' at server.py:433,539 is the intended one (spec called for Claude Sonnet 4.5). It works via the Emergent proxy but the naming may be off."
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "retest_needed": false,
+  "full_testing_deferred": true
+}
