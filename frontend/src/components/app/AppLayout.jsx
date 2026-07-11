@@ -1,25 +1,19 @@
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { LayoutDashboard, ListTodo, Target, NotebookPen, MessagesSquare, UserRound, LogOut } from "lucide-react";
+import { NavLink, Outlet } from "react-router-dom";
+import { LayoutDashboard, ListTodo, Target, NotebookPen, MessagesSquare, UserRound } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
 
 const nav = [
-  { to: "/app/dashboard", label: "Dashboard", icon: LayoutDashboard, tid: "nav-dashboard" },
-  { to: "/app/tasks",     label: "Tasks",     icon: ListTodo,        tid: "nav-tasks" },
-  { to: "/app/goals",     label: "Goals",     icon: Target,          tid: "nav-goals" },
-  { to: "/app/notes",     label: "Notes",     icon: NotebookPen,     tid: "nav-notes" },
-  { to: "/app/coach",     label: "Coach",     icon: MessagesSquare,  tid: "nav-coach" },
-  { to: "/app/profile",   label: "Profile",   icon: UserRound,       tid: "nav-profile" },
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, tid: "nav-dashboard" },
+  { to: "/tasks",     label: "Tasks",     icon: ListTodo,        tid: "nav-tasks" },
+  { to: "/goals",     label: "Goals",     icon: Target,          tid: "nav-goals" },
+  { to: "/notes",     label: "Notes",     icon: NotebookPen,     tid: "nav-notes" },
+  { to: "/coach",     label: "Coach",     icon: MessagesSquare,  tid: "nav-coach" },
+  { to: "/profile",   label: "Profile",   icon: UserRound,       tid: "nav-profile" },
 ];
 
 export default function AppLayout() {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
-
-  const doLogout = async () => {
-    await logout();
-    navigate("/login", { replace: true });
-  };
+  const { user } = useAuth();
 
   return (
     <div className="min-h-screen flex bg-background text-foreground relative z-10">
@@ -55,14 +49,7 @@ export default function AppLayout() {
 
         <div className="mt-6 pt-6 border-t border-border">
           <div className="text-sm font-medium truncate" data-testid="sidebar-user-name">{user?.name}</div>
-          <div className="text-xs text-muted-foreground truncate">{user?.email}</div>
-          <button
-            data-testid="logout-button"
-            onClick={doLogout}
-            className="mt-4 w-full flex items-center gap-2 justify-center py-2 px-3 rounded-full text-xs font-semibold border border-border hover:border-foreground/40 transition-colors"
-          >
-            <LogOut className="w-3.5 h-3.5" /> Sign out
-          </button>
+          <div className="text-xs text-muted-foreground truncate">Personal workspace</div>
         </div>
       </aside>
 

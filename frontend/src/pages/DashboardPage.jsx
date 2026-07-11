@@ -46,7 +46,7 @@ export default function DashboardPage() {
               <div className="overline mb-1">Open tasks</div>
               <h2 className="font-display text-2xl font-semibold">What's next</h2>
             </div>
-            <Link to="/app/tasks" data-testid="dashboard-all-tasks" className="text-sm font-semibold underline underline-offset-4">All tasks</Link>
+            <Link to="/tasks" data-testid="dashboard-all-tasks" className="text-sm font-semibold underline underline-offset-4">All tasks</Link>
           </div>
           {openTasks.length === 0 ? (
             <div className="text-sm text-muted-foreground">Nothing open. Enjoy the calm — or open a new goal.</div>
@@ -73,7 +73,7 @@ export default function DashboardPage() {
               <div className="overline mb-1">Goals</div>
               <h2 className="font-display text-2xl font-semibold">North star</h2>
             </div>
-            <Link to="/app/goals" data-testid="dashboard-all-goals" className="text-sm font-semibold underline underline-offset-4">All</Link>
+            <Link to="/goals" data-testid="dashboard-all-goals" className="text-sm font-semibold underline underline-offset-4">All</Link>
           </div>
           {goals.length === 0 ? (
             <div className="text-sm text-muted-foreground">No goals yet. Create one — Momentum will break it down for you.</div>

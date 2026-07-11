@@ -9,13 +9,13 @@ export function AuthProvider({ children }) {
 
   const refresh = useCallback(async () => {
     try {
-      const { data } = await api.get("/auth/me");
+      // Single-user mode: /auth/session seeds+returns the default owner user
+      // and sets the auth cookie. Falls through to /auth/me if a session
+      // already exists.
+      const { data } = await api.get("/auth/session");
       setUser(data);
     } catch (err) {
-      // Not authenticated is expected on first visit — swallow but log for debugging.
-      if (err?.response?.status && err.response.status !== 401) {
-        console.error("Auth refresh failed:", err);
-      }
+      console.error("Auth session failed:", err);
       setUser(false);
     }
   }, []);

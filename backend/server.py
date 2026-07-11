@@ -27,6 +27,8 @@ JWT_SECRET = os.environ["JWT_SECRET"]
 EMERGENT_LLM_KEY = os.environ["EMERGENT_LLM_KEY"]
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 JWT_ALG = "HS256"
+DEFAULT_USER_EMAIL = "owner@momentum.app"
+DEFAULT_USER_NAME = "Owner"
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -220,6 +222,32 @@ async def logout(response: Response):
 
 @api.get("/auth/me", response_model=UserOut)
 async def me(user: dict = Depends(get_current_user)):
+    return user
+
+
+@api.get("/auth/session", response_model=UserOut)
+async def session(response: Response):
+    """Single-user mode: return (creating if needed) the default owner user and set an auth cookie.
+    This bypasses login/signup for personal use while keeping all user_id scoping intact."""
+    user = await db.users.find_one({"email": DEFAULT_USER_EMAIL})
+    if not user:
+        user_id = str(uuid.uuid4())
+        doc = {
+            "id": user_id,
+            "email": DEFAULT_USER_EMAIL,
+            "name": DEFAULT_USER_NAME,
+            "password_hash": hash_password(uuid.uuid4().hex),  # unusable, never used
+            "working_style": "",
+            "mindset": "",
+            "preferences": "",
+            "created_at": iso(now_utc()),
+        }
+        await db.users.insert_one(doc)
+        user = doc
+    token = create_access_token(user["id"], user["email"])
+    set_auth_cookie(response, token)
+    user.pop("password_hash", None)
+    user.pop("_id", None)
     return user
 
 
@@ -604,6 +632,20 @@ async def startup():
     await db.goals.create_index([("user_id", 1), ("status", 1)])
     await db.notes.create_index("user_id")
     await db.chat_messages.create_index([("user_id", 1), ("created_at", 1)])
+    # Seed default owner user for single-user mode (idempotent)
+    existing = await db.users.find_one({"email": DEFAULT_USER_EMAIL})
+    if not existing:
+        await db.users.insert_one({
+            "id": str(uuid.uuid4()),
+            "email": DEFAULT_USER_EMAIL,
+            "name": DEFAULT_USER_NAME,
+            "password_hash": hash_password(uuid.uuid4().hex),
+            "working_style": "",
+            "mindset": "",
+            "preferences": "",
+            "created_at": iso(now_utc()),
+        })
+        logger.info("Seeded default owner user")
     logger.info("Startup complete")
 
 
