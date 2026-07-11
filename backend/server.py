@@ -184,6 +184,7 @@ class AgentChatIn(BaseModel):
 class NoteReflectIn(BaseModel):
     note_id: str
     save: bool = False
+    reflection: Optional[str] = None  # if provided AND save=True, persist this text without re-calling the LLM
 
 
 # -------------------- Auth Routes --------------------
@@ -920,6 +921,15 @@ async def reflect_note(payload: NoteReflectIn, user: dict = Depends(get_current_
     note = await db.notes.find_one({"id": payload.note_id, "user_id": user["id"]}, {"_id": 0})
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
+
+    # Fast path: persist an already-generated reflection without re-calling the LLM.
+    if payload.save and payload.reflection is not None:
+        text = payload.reflection.strip()
+        await db.notes.update_one(
+            {"id": payload.note_id, "user_id": user["id"]},
+            {"$set": {"reflection": text, "updated_at": iso(now_utc())}},
+        )
+        return {"reflection": text, "saved": True}
 
     ctx = build_user_context(user)
     system = (

@@ -76,7 +76,12 @@ export default function NotesPage() {
     }
     setReflecting(true);
     try {
-      const { data } = await api.post("/agent/reflect-note", { note_id: selected, save: save_it });
+      // If we're just persisting an already-visible reflection, pass it through
+      // to skip the LLM re-call.
+      const body = save_it && reflection
+        ? { note_id: selected, save: true, reflection }
+        : { note_id: selected, save: save_it };
+      const { data } = await api.post("/agent/reflect-note", body);
       setReflection(data.reflection);
       if (save_it) toast.success("Reflection saved to note");
       if (save_it) load();
