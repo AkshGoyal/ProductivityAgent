@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import api from "@/api/client";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,11 +17,11 @@ export default function TasksPage() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ title: "", description: "", priority: "medium", due_date: "" });
 
-  const load = async () => {
+  const load = useCallback(async () => {
     const { data } = await api.get("/tasks");
     setTasks(data);
-  };
-  useEffect(() => { load(); }, []);
+  }, []);
+  useEffect(() => { load(); }, [load]);
 
   const create = async (e) => {
     e.preventDefault();

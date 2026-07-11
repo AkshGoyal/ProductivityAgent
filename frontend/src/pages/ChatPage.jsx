@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import api, { API_BASE } from "@/api/client";
 import { Textarea } from "@/components/ui/textarea";
 import { Send, Trash2 } from "lucide-react";
@@ -10,12 +10,12 @@ export default function ChatPage() {
   const [streaming, setStreaming] = useState(false);
   const endRef = useRef(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     const { data } = await api.get("/chat/history");
     setMessages(data);
-  };
+  }, []);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, streaming]);
 
   const send = async (e) => {

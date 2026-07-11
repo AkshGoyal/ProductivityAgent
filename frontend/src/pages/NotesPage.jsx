@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import api from "@/api/client";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,15 +11,19 @@ export default function NotesPage() {
   const [draft, setDraft] = useState({ title: "", content: "" });
   const [saving, setSaving] = useState(false);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     const { data } = await api.get("/notes");
     setNotes(data);
-    if (data.length && !selected) {
-      setSelected(data[0].id);
-      setDraft({ title: data[0].title, content: data[0].content });
-    }
-  };
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+    setSelected((prev) => {
+      if (prev) return prev;
+      if (data.length) {
+        setDraft({ title: data[0].title, content: data[0].content });
+        return data[0].id;
+      }
+      return null;
+    });
+  }, []);
+  useEffect(() => { load(); }, [load]);
 
   const createNew = async () => {
     const { data } = await api.post("/notes", { title: "Untitled", content: "" });

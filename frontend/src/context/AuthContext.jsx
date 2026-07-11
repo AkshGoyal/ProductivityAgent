@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, useMemo } from "react";
 import api, { formatApiError } from "@/api/client";
 
 const AuthCtx = createContext(null);
@@ -11,7 +11,11 @@ export function AuthProvider({ children }) {
     try {
       const { data } = await api.get("/auth/me");
       setUser(data);
-    } catch {
+    } catch (err) {
+      // Not authenticated is expected on first visit — swallow but log for debugging.
+      if (err?.response?.status && err.response.status !== 401) {
+        console.error("Auth refresh failed:", err);
+      }
       setUser(false);
     }
   }, []);
@@ -20,7 +24,7 @@ export function AuthProvider({ children }) {
     refresh();
   }, [refresh]);
 
-  const login = async (email, password) => {
+  const login = useCallback(async (email, password) => {
     setError("");
     try {
       const { data } = await api.post("/auth/login", { email, password });
@@ -30,9 +34,9 @@ export function AuthProvider({ children }) {
       setError(formatApiError(e.response?.data?.detail) || e.message);
       return false;
     }
-  };
+  }, []);
 
-  const register = async (email, password, name) => {
+  const register = useCallback(async (email, password, name) => {
     setError("");
     try {
       const { data } = await api.post("/auth/register", { email, password, name });
@@ -42,24 +46,29 @@ export function AuthProvider({ children }) {
       setError(formatApiError(e.response?.data?.detail) || e.message);
       return false;
     }
-  };
+  }, []);
 
-  const logout = async () => {
-    try { await api.post("/auth/logout"); } catch {}
+  const logout = useCallback(async () => {
+    try {
+      await api.post("/auth/logout");
+    } catch (err) {
+      console.error("Logout error:", err);
+    }
     setUser(false);
-  };
+  }, []);
 
-  const updateProfile = async (patch) => {
+  const updateProfile = useCallback(async (patch) => {
     const { data } = await api.patch("/auth/profile", patch);
     setUser(data);
     return data;
-  };
+  }, []);
 
-  return (
-    <AuthCtx.Provider value={{ user, error, login, register, logout, refresh, updateProfile }}>
-      {children}
-    </AuthCtx.Provider>
+  const value = useMemo(
+    () => ({ user, error, login, register, logout, refresh, updateProfile }),
+    [user, error, login, register, logout, refresh, updateProfile]
   );
+
+  return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }
 
 export const useAuth = () => useContext(AuthCtx);

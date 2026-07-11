@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import api from "@/api/client";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,11 +13,11 @@ export default function GoalsPage() {
   const [form, setForm] = useState({ title: "", description: "", target_date: "" });
   const [breakingDown, setBreakingDown] = useState(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     const { data } = await api.get("/goals");
     setGoals(data);
-  };
-  useEffect(() => { load(); }, []);
+  }, []);
+  useEffect(() => { load(); }, [load]);
 
   const create = async (e) => {
     e.preventDefault();
