@@ -1,0 +1,125 @@
+{
+  "theme_and_identity": {
+    "archetype": "Organic & Earthy mixed with Swiss High-Contrast",
+    "vibe": "Grounded, matte, physical, calming but highly structured. Designed to reduce cognitive load and anxiety. The Anti-Distraction Engine.",
+    "color_palette": {
+      "light": {
+        "background": "#F5F4F0",
+        "surface": "#FFFFFF",
+        "surface_subdued": "#EFECE7",
+        "border": "#E5E3DB",
+        "text_primary": "#1A1A1A",
+        "text_secondary": "#5C5C5C",
+        "primary_brand": "#2E473B",
+        "primary_hover": "#22352C",
+        "accent_terracotta": "#B85C45",
+        "accent_sand": "#D9CDB8"
+      },
+      "dark": {
+        "background": "#121312",
+        "surface": "#1A1C1A",
+        "surface_subdued": "#242724",
+        "border": "#2C302C",
+        "text_primary": "#F2F2F2",
+        "text_secondary": "#A1A1A1",
+        "primary_brand": "#D9CDB8",
+        "primary_hover": "#C2B299",
+        "accent_terracotta": "#D27158",
+        "accent_sand": "#D9CDB8"
+      }
+    }
+  },
+  "typography": {
+    "primary_heading_font": "Cabinet Grotesk",
+    "body_font": "Manrope",
+    "fallback_fonts": "sans-serif",
+    "rules": [
+      "Use Cabinet Grotesk for all Headings (H1-H4).",
+      "Use Manrope for body text, UI labels, and inputs.",
+      "Headlines > 32px MUST use tracking-tight.",
+      "Overlines/Labels MUST be Uppercase, text-xs, tracking-[0.2em] with text_secondary color.",
+      "Do NOT use Inter for headings."
+    ]
+  },
+  "layouts_and_spacing": {
+    "general": [
+      "Generous spacing: Use p-6, p-8, or p-12 for main containers to give breathing room.",
+      "App structure: Use a collapsible left-sidebar navigation instead of a top nav for the dashboard layout.",
+      "Dashboard Grid: Use High Density Grid for the main view (grid-cols-1 md:grid-cols-3 lg:grid-cols-4) with gap-6.",
+      "Optical Alignment: Ensure elements look balanced, not just mathematically centered.",
+      "Avoid 100% full-width content on ultra-wide screens; cap main content area at max-w-7xl."
+    ],
+    "components": [
+      "Cards: Flat solid surfaces. 1px subtle border (border-border), max rounded-xl (12px) radius. Use soft, organic shadows only on hover.",
+      "Header/Nav: Solid background with a hard 1px bottom border. NEVER use transparent header if content scrolls underneath.",
+      "Sidebar: Subdued background, distinct from main content area to establish clear spatial hierarchy."
+    ]
+  },
+  "visual_enhancers": {
+    "surfaces": "Use Neumorphism (Tactile) variant sparingly for small widgets. Mostly rely on crisp 1px borders (Grid Borders style) for data-heavy sections.",
+    "textures": "Apply a very subtle noise overlay (opacity 2-3%) on the main background to kill digital flatness.",
+    "motion": "Staggered entrance animations for task lists (framer-motion). Hover states should subtly lift (-translate-y-0.5) and slightly darken borders."
+  },
+  "component_instructions": {
+    "Shadcn": "Use Shadcn components for complex logic (Tables, Select, Dialog, Calendar). Strip away default Vercel look and apply our earthy/matte styling.",
+    "Forms": "Use Shadcn Input, Form, Checkbox.",
+    "Charts": "Use Shadcn charts (Recharts) for analytics. Ensure they use the brand accent colors (Moss Green, Terracotta) rather than generic blue/purple.",
+    "Toasts": "Use Sonner for toast notifications, configured to appear at bottom-right.",
+    "Icons": "Use lucide-react (default). Maintain consistent stroke width. NEVER use emojis."
+  },
+  "feature_specific_designs": {
+    "dashboard": "Top-Left quadrant shows 'North Star' metric (Goal Progress). Use progressive disclosure—hide dense lists behind tabs.",
+    "tasks_management": "Use a crisp list view with staggered animations. High priority tasks can use the Terracotta accent.",
+    "ai_coach_sidebar": "Differentiate the AI chat area visually using a slightly darker/subdued background color to feel like a 'drawer' or separate dimension.",
+    "notes_journal": "Full-width editor area with large, airy margins. Default to Manrope text-lg with leading-relaxed."
+  },
+  "accessibility_and_testing": {
+    "contrast": "Ensure minimum 4.5:1 ratio for normal text. Use APCA guidelines.",
+    "testing": "All interactive and key informational elements MUST include a data-testid attribute in kebab-case based on role (e.g., data-testid='create-task-button')."
+  },
+  "media_and_assets": {
+    "empty_states": [
+      {
+        "url": "https://images.unsplash.com/photo-1533630160910-65f5a1718c65?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzR8MHwxfHNlYXJjaHwzfHx6ZW4lMjBzdG9uZSUyMGNhbG18ZW58MHx8fHwxNzgzNzYwOTcwfDA&ixlib=rb-4.1.0&q=85",
+        "description": "Stack of white zen stones on seashore",
+        "placement": "Use for 'Zero Goals' or 'All caught up' empty state to reinforce calm/focus."
+      }
+    ],
+    "auth_background": [
+      {
+        "url": "https://images.pexels.com/photos/22711217/pexels-photo-22711217.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Minimalist office space with plant",
+        "placement": "Use as a high-quality side image for the Login/Signup split screen."
+      }
+    ],
+    "avatars": [
+      {
+        "url": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NzB8MHwxfHNlYXJjaHwxfHxwZXJzb24lMjBhdmF0YXIlMjBwb3J0cmFpdHxlbnwwfHx8fDE3ODM3NjA5NzB8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Woman wearing black crew-neck",
+        "placement": "Sample user avatar in the profile sidebar/header."
+      },
+      {
+        "url": "https://images.pexels.com/photos/32717323/pexels-photo-32717323.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Monochrome portrait of young man",
+        "placement": "Secondary user avatar or AI persona representation."
+      }
+    ]
+  },
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "You tend to converge toward generic, 'on distribution' outputs. In frontend design, this creates the 'AI slop' aesthetic. Avoid this: make creative, distinctive frontends that surprise and delight.",
+    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients.",
+    "Don't make generic centered layouts, simplistic gradients, and uniform styling.",
+    "Create depth through layered design elements with z-index hierarchy.",
+    "You MUST NOT apply universal transition (e.g., transition: all). Always add transitions for specific interactive elements.",
+    "You MUST NOT center align the app container, i.e., do not add .App { text-align: center; } in the css file.",
+    "Always use modern button styles like pill-shaped, or sharp button with interaction animations & color relevant to the app style.",
+    "NEVER use AI assistant Emoji characters like 🤖🧠💭💡🔮🎯 etc for icons.",
+    "Every interaction needs micro-animations - hover states, transitions, entrance animations. Static = dead.",
+    "Use 2-3x more spacing than feels comfortable. Cramped designs look cheap.",
+    "Prioritize using pre-existing components from src/components/ui when applicable.",
+    "Use sonner for toasts, located in /app/src/components/ui/sonner.js (or equivalent jsx).",
+    "All interactive elements MUST include data-testid.",
+    "Do NOT use transparent backgrounds on headers over content.",
+    "This project uses .js/.jsx files, NOT .tsx. Adapt your imports and component structure accordingly, avoiding TypeScript types."
+  ]
+}
