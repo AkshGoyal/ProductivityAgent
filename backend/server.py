@@ -1006,6 +1006,79 @@ async def agent_chat(payload: AgentChatIn, user: dict = Depends(get_current_user
     }
 
 
+@api.post("/agent/plan-day")
+async def plan_day(user: dict = Depends(get_current_user)):
+    """One-shot: ask the LLM to produce today's ranked plan grounded in the user's real data.
+    Returns {focus, items:[{title, why, priority, estimated_minutes, task_id?}]}"""
+    uid = user["id"]
+    open_tasks = await db.tasks.find(
+        {"user_id": uid, "status": {"$ne": "done"}},
+        {"_id": 0, "id": 1, "title": 1, "priority": 1, "status": 1, "due_date": 1, "goal_id": 1},
+    ).sort("created_at", -1).to_list(50)
+    goals = await db.goals.find(
+        {"user_id": uid, "status": "active"},
+        {"_id": 0, "id": 1, "title": 1, "target_date": 1},
+    ).sort("created_at", -1).to_list(20)
+
+    import json as _json, re as _re
+    ctx = build_user_context(user) + "\n"
+    ctx += f"ACTIVE GOALS:\n{_json.dumps(goals, default=str)[:2000]}\n\n"
+    ctx += f"OPEN TASKS:\n{_json.dumps(open_tasks, default=str)[:4000]}\n"
+
+    system = (
+        "You are Momentum. Produce today's focused plan for the user. Pick 3-5 items MAX — the smallest set that "
+        "actually moves the needle. Each item is EITHER a real task from OPEN TASKS (include its task_id) OR a fresh "
+        "task title if you're proposing a new one (omit task_id). Rank in the order they should be tackled.\n"
+        "Return STRICT JSON only — no fences, no prose outside:\n"
+        "{\"focus\":\"one-line north star for today\",\"items\":[{\"title\":\"...\",\"why\":\"1 short sentence\",\"priority\":\"low|medium|high\",\"estimated_minutes\":30,\"task_id\":\"optional\"}]}"
+    )
+    prompt = ctx
+
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"plan-day-{uid}-{uuid.uuid4()}",
+        system_message=system,
+    ).with_model("anthropic", "claude-sonnet-4-6")
+
+    raw = ""
+    try:
+        async for ev in chat.stream_message(UserMessage(text=prompt)):
+            if isinstance(ev, TextDelta):
+                raw += ev.content
+            elif isinstance(ev, StreamDone):
+                break
+    except Exception as e:
+        logger.exception("plan-day failed")
+        raise HTTPException(status_code=500, detail=f"AI error: {e}")
+
+    m = _re.search(r"\{[\s\S]*\}", raw)
+    if not m:
+        raise HTTPException(status_code=500, detail="AI response could not be parsed")
+    try:
+        parsed = _json.loads(m.group(0))
+    except Exception:
+        raise HTTPException(status_code=500, detail="AI JSON parse failure")
+
+    # Normalize items
+    items = []
+    for it in parsed.get("items", []) or []:
+        if not isinstance(it, dict) or not it.get("title"):
+            continue
+        items.append({
+            "title": str(it["title"])[:200],
+            "why": str(it.get("why", ""))[:400],
+            "priority": it.get("priority") if it.get("priority") in ("low", "medium", "high") else "medium",
+            "estimated_minutes": int(it.get("estimated_minutes", 30)) if isinstance(it.get("estimated_minutes"), (int, float)) else 30,
+            "task_id": it.get("task_id") if it.get("task_id") else None,
+        })
+    return {
+        "focus": str(parsed.get("focus", "Focus on what moves the needle today."))[:240],
+        "items": items,
+        "generated_at": iso(now_utc()),
+    }
+
+
+
 @api.post("/agent/reflect-note")
 async def reflect_note(payload: NoteReflectIn, user: dict = Depends(get_current_user)):
     note = await db.notes.find_one({"id": payload.note_id, "user_id": user["id"]}, {"_id": 0})
