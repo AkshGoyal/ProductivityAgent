@@ -188,6 +188,108 @@ def test_reflect_note_404(client):
     assert r.status_code == 404
 
 
+# ---------- Agent: create_goal_with_tasks (composite) ----------
+def test_agent_create_goal_with_tasks(client):
+    # cleanup any newsletter goal
+    for g in client.get(f"{API}/goals").json():
+        if "newsletter" in g["title"].lower() or g.get("title", "").startswith("TEST_"):
+            client.delete(f"{API}/goals/{g['id']}")
+
+    r = client.post(
+        f"{API}/agent/chat",
+        json={"message": "Plan my week around launching the TEST_newsletter"},
+        timeout=180,
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    ok_actions = [a for a in data["actions"] if a["status"] == "ok"]
+    tools = [a["tool"] for a in ok_actions]
+    # Should be create_goal_with_tasks OR (create_goal + several create_task)
+    assert ("create_goal_with_tasks" in tools) or (
+        "create_goal" in tools and tools.count("create_task") >= 2
+    ), f"tools={tools}"
+    assert set(data.get("invalidate", [])) & {"goals", "tasks"}
+
+    goals = client.get(f"{API}/goals").json()
+    nl = next((g for g in goals if "newsletter" in g["title"].lower()), None)
+    assert nl is not None, f"No newsletter goal in {[g['title'] for g in goals]}"
+    assert nl["task_count"] >= 2, f"task_count={nl['task_count']}"
+
+
+# ---------- Agent: batch create_task (three tasks in one turn) ----------
+def test_agent_batch_create_tasks(client):
+    client.delete(f"{API}/agent/history")
+    # cleanup
+    for t in client.get(f"{API}/tasks").json():
+        if any(k in t["title"].lower() for k in ["email designer", "draft copy", "book venue"]):
+            client.delete(f"{API}/tasks/{t['id']}")
+
+    r = client.post(
+        f"{API}/agent/chat",
+        json={"message": "Add three tasks: email designer, draft copy, book venue"},
+        timeout=120,
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    ok_creates = [a for a in data["actions"] if a["tool"] == "create_task" and a["status"] == "ok"]
+    assert len(ok_creates) >= 3, f"only {len(ok_creates)} create_task actions: {data['actions']}"
+
+    titles = [t["title"].lower() for t in client.get(f"{API}/tasks").json()]
+    for keyword in ["email designer", "draft copy", "book venue"]:
+        assert any(keyword in t for t in titles), f"missing '{keyword}' in {titles}"
+
+
+# ---------- Agent: multi-tool turn (goal + tasks + note) ----------
+def test_agent_multi_tool_turn(client):
+    client.delete(f"{API}/agent/history")
+    # cleanup any prior marathon goal
+    for g in client.get(f"{API}/goals").json():
+        if "marathon" in g["title"].lower():
+            client.delete(f"{API}/goals/{g['id']}")
+
+    r = client.post(
+        f"{API}/agent/chat",
+        json={
+            "message": "I want to run a first marathon in 6 months. Set that up as a goal with training tasks, and capture a note that my main worry is knee injuries."
+        },
+        timeout=180,
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    ok_actions = [a for a in data["actions"] if a["status"] == "ok"]
+    tools = [a["tool"] for a in ok_actions]
+    has_goal = "create_goal_with_tasks" in tools or "create_goal" in tools
+    has_note = "add_note" in tools
+    assert has_goal and has_note, f"tools={tools}"
+
+    goals = client.get(f"{API}/goals").json()
+    marathon = next((g for g in goals if "marathon" in g["title"].lower()), None)
+    assert marathon is not None
+    assert marathon["task_count"] >= 2
+
+    notes = client.get(f"{API}/notes").json()
+    assert any("knee" in (n.get("content", "") + n.get("title", "")).lower() for n in notes)
+
+
+# ---------- Agent: no-permission behavior (must act, not ask) ----------
+def test_agent_no_permission_asking(client):
+    client.delete(f"{API}/agent/history")
+    r = client.post(
+        f"{API}/agent/chat",
+        json={"message": "TEST_actfirst — prep for my client demo tomorrow"},
+        timeout=120,
+    )
+    assert r.status_code == 200
+    data = r.json()
+    reply = data["assistant"]["content"].lower()
+    ok_actions = [a for a in data["actions"] if a["status"] == "ok"]
+    # Must have acted (>=1 tool succeeded)
+    assert len(ok_actions) >= 1, f"agent asked permission instead of acting; reply={reply[:200]}, actions={data['actions']}"
+    # Should NOT contain permission-asking phrases
+    forbidden = ["would you like me to", "should i create", "want me to create", "shall i"]
+    assert not any(p in reply for p in forbidden), f"agent asked permission: {reply[:300]}"
+
+
 # ---------- Cleanup ----------
 def test_zz_cleanup(client):
     for t in client.get(f"{API}/tasks").json():
@@ -197,5 +299,5 @@ def test_zz_cleanup(client):
         if n.get("title", "").startswith("TEST_") or "lo-fi" in n.get("content", "").lower():
             client.delete(f"{API}/notes/{n['id']}")
     for g in client.get(f"{API}/goals").json():
-        if g.get("title", "").startswith("TEST_"):
+        if g.get("title", "").startswith("TEST_") or "newsletter" in g["title"].lower() or "marathon" in g["title"].lower():
             client.delete(f"{API}/goals/{g['id']}")

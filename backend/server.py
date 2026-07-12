@@ -624,26 +624,37 @@ You help them ideate, plan their day, break down goals, weigh decisions, and ref
 
 Voice: warm but direct. Concrete over preachy. Ask sharp questions. Push back when they're avoiding hard things. Never invent data — if you don't see it in the context, say so.
 
-You have TOOLS. When the user asks you to do something in their workspace (create a task, break down a goal, capture a note, update a task's status/priority), you MUST take that action via a tool call — do not just describe it.
+CRITICAL BEHAVIORAL RULES:
+- You are an EXECUTION companion, not a suggestion box. When the user's message implies work to be done, you must BRAINSTORM/REASON AND ACT in the SAME turn. Do the thinking out loud in `reply`, then perform the concrete tool calls in `actions`.
+- NEVER ask "Would you like me to...?" or "Should I create...?" — if the situation calls for tasks/goals/notes, create them and report what you did.
+- Prefer creating structure over talking about creating it. If the user says "prep for the client meeting Thursday", CREATE a goal + subtasks or a batch of tasks in this same turn.
+- Batch actions when it fits: a single message can create a goal AND multiple tasks AND a note together.
+- Only skip action if the user is clearly just reflecting/asking a question with no operational content.
 
 RESPONSE FORMAT — return STRICT JSON only, no markdown fences, no prose outside the JSON:
 {
-  "reply": "<your natural-language response to the user, 1-6 short paragraphs or bullets>",
+  "reply": "<your natural-language response — reason through it out loud, THEN state what you did>",
   "actions": [
-    {"tool": "create_task", "args": {"title": "string", "description": "string (optional)", "priority": "low|medium|high", "goal_id": "string (optional)", "estimated_minutes": 60}},
-    {"tool": "update_task", "args": {"task_id": "string", "status": "todo|in_progress|done", "priority": "low|medium|high"}},
-    {"tool": "break_down_goal", "args": {"goal_id": "string"}},
+    {"tool": "create_goal", "args": {"title": "string", "description": "string (optional)", "target_date": "YYYY-MM-DD (optional)"}},
+    {"tool": "create_goal_with_tasks", "args": {"goal": {"title": "string", "description": "string (optional)", "target_date": "YYYY-MM-DD (optional)"}, "tasks": [{"title": "string", "description": "string (optional)", "priority": "low|medium|high", "estimated_minutes": 60}]}},
+    {"tool": "create_task", "args": {"title": "string", "description": "string (optional)", "priority": "low|medium|high", "goal_id": "string (optional, use ONLY existing goal ids from context)", "estimated_minutes": 60}},
+    {"tool": "update_task", "args": {"task_id": "string (from OPEN TASKS in context)", "status": "todo|in_progress|done", "priority": "low|medium|high"}},
+    {"tool": "break_down_goal", "args": {"goal_id": "string (must exist in context)"}},
     {"tool": "add_note", "args": {"title": "string", "content": "string"}}
   ]
 }
 
+Tool-choice guidance:
+- New multi-step endeavor (launch X, prep for Y, plan my week around Z) → use `create_goal_with_tasks` with 4–8 concrete subtasks in ONE action.
+- User lists specific tasks ("add three tasks: A, B, C") → emit N `create_task` actions.
+- User wants to reorganize an existing goal already in context → `break_down_goal` with its real id.
+- User captures a thought → `add_note`.
+- User reports progress on an existing task → `update_task` with its real id.
+
 Rules:
-- `actions` is a list; use [] if no action is warranted.
-- Only include tool args that you actually want to set. Omit optional args if unsure.
-- For `break_down_goal`, the goal MUST already exist in the user's goals list — reference it by id from the context.
-- For `update_task`, use task ids from the OPEN TASKS list in the context.
-- Never fabricate task_ids or goal_ids.
-- Keep replies tight and useful. Bullets when listing options, prose when reflecting."""
+- `actions` is a list — use [] ONLY if the message is purely a question/reflection with no operational content.
+- Never fabricate task_ids or goal_ids. Reference only ids that exist in the LIVE CONTEXT.
+- Keep `reply` tight: reason briefly, then confirm actions in past tense ("I created a goal…", "I added 3 tasks…"). Don't repeat the full task list in the reply — the UI shows chips for each action."""
 
 
 async def _load_agent_context(user: dict) -> str:
@@ -690,6 +701,74 @@ async def _agent_history(user: dict, limit: int = 20) -> list:
 async def _run_tool(user: dict, tool: str, args: dict) -> dict:
     """Execute a single tool call. Returns a structured result: {tool, status, result?, error?}"""
     try:
+        if tool == "create_goal":
+            title = str(args.get("title", "")).strip()
+            if not title:
+                return {"tool": tool, "status": "error", "error": "title required"}
+            doc = {
+                "id": str(uuid.uuid4()),
+                "user_id": user["id"],
+                "title": title[:200],
+                "description": str(args.get("description", "")),
+                "target_date": args.get("target_date"),
+                "status": "active",
+                "created_at": iso(now_utc()),
+                "updated_at": iso(now_utc()),
+            }
+            await db.goals.insert_one(doc)
+            doc.pop("_id", None)
+            return {"tool": tool, "status": "ok", "result": doc, "summary": f"Created goal: {doc['title']}"}
+
+        if tool == "create_goal_with_tasks":
+            g = args.get("goal") or {}
+            title = str(g.get("title", "")).strip()
+            if not title:
+                return {"tool": tool, "status": "error", "error": "goal.title required"}
+            goal_doc = {
+                "id": str(uuid.uuid4()),
+                "user_id": user["id"],
+                "title": title[:200],
+                "description": str(g.get("description", "")),
+                "target_date": g.get("target_date"),
+                "status": "active",
+                "created_at": iso(now_utc()),
+                "updated_at": iso(now_utc()),
+            }
+            await db.goals.insert_one(goal_doc)
+            goal_doc.pop("_id", None)
+
+            created_tasks = []
+            for t in (args.get("tasks") or []):
+                if not isinstance(t, dict):
+                    continue
+                t_title = str(t.get("title", "")).strip()
+                if not t_title:
+                    continue
+                priority = t.get("priority") if t.get("priority") in ("low", "medium", "high") else "medium"
+                em = t.get("estimated_minutes", 60)
+                task_doc = {
+                    "id": str(uuid.uuid4()),
+                    "user_id": user["id"],
+                    "goal_id": goal_doc["id"],
+                    "title": t_title[:200],
+                    "description": str(t.get("description", "")),
+                    "priority": priority,
+                    "status": "todo",
+                    "due_date": t.get("due_date"),
+                    "estimated_minutes": int(em) if isinstance(em, (int, float)) else 60,
+                    "created_at": iso(now_utc()),
+                    "updated_at": iso(now_utc()),
+                }
+                await db.tasks.insert_one(task_doc)
+                task_doc.pop("_id", None)
+                created_tasks.append(task_doc)
+            return {
+                "tool": tool,
+                "status": "ok",
+                "result": {"goal": goal_doc, "tasks": created_tasks},
+                "summary": f"Created goal '{goal_doc['title']}' with {len(created_tasks)} tasks",
+            }
+
         if tool == "create_task":
             title = str(args.get("title", "")).strip()
             if not title:
@@ -904,15 +983,26 @@ async def agent_chat(payload: AgentChatIn, user: dict = Depends(get_current_user
     await db.agent_messages.insert_one(assistant_msg)
     assistant_msg.pop("_id", None)
 
+    # Compute invalidation hints for the frontend
+    tool_to_invalidations = {
+        "create_task": ["tasks"],
+        "update_task": ["tasks"],
+        "break_down_goal": ["goals", "tasks"],
+        "add_note": ["notes"],
+        "create_goal": ["goals"],
+        "create_goal_with_tasks": ["goals", "tasks"],
+    }
+    invalidate = set()
+    for a in action_results:
+        if a.get("status") != "ok":
+            continue
+        for key in tool_to_invalidations.get(a.get("tool"), []):
+            invalidate.add(key)
+
     return {
         "assistant": assistant_msg,
         "actions": action_results,
-        # Hints for the frontend on what to refresh
-        "invalidate": sorted({
-            {"create_task": "tasks", "update_task": "tasks", "break_down_goal": "goals",
-             "add_note": "notes"}.get(a.get("tool"), "")
-            for a in action_results if a.get("status") == "ok"
-        } - {""}),
+        "invalidate": sorted(invalidate),
     }
 
 
