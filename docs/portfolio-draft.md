@@ -1,10 +1,9 @@
 # Portfolio draft — ProductivityAgent (Momentum)
 
 Draft material for review. Everything below is derived from the repo's code,
-commit history, README, and config — anything I couldn't verify from those
-sources is marked **[INFERRED]**, and open questions are listed at the end.
-**Read the first question below before using this draft** — it affects how
-the whole case study should be framed.
+commit history, README, and config, plus the repo owner's answers (noted
+inline) to the questions raised in the previous draft — anything else I
+couldn't verify is marked **[INFERRED]**.
 
 ---
 
@@ -32,6 +31,12 @@ management." The product is for one person managing their own tasks, goals,
 and notes, calibrated to how they personally work.
 
 ### What I built
+
+**How it was built (per the repo owner):** Aksh wrote the product spec and
+prompt, directed the build on the Emergent AI app-building platform, then
+reviewed and iterated on the result himself. This wasn't written
+commit-by-commit by hand — see the note at the top of "Hard parts and
+decisions" for what that means for how this section was researched.
 
 **In plain terms:** A web app ("Momentum") where you set goals, and an AI
 coach breaks each one into 5–8 concrete tasks sized to be done in a single
@@ -63,10 +68,12 @@ database connection and the LLM key.
 **A note on how this section was researched:** the commit history isn't
 useful for finding these the normal way — every commit before this
 portfolio-prep PR is `auto-commit for <uuid>` or `Auto-generated changes`,
-authored by `emergent-agent-e1`, with no descriptive messages. So the
-items below come from reading the current code directly, not from commit
-messages. See question 1 below — this also means I can't confirm from the
-repo alone which of these decisions were made by you versus generated.
+authored by `emergent-agent-e1`, with no descriptive messages. So the items
+below come from reading the current code directly, not from commit
+messages. Per the repo owner, the implementation itself (including the
+specific choices below) came from directing the Emergent platform against
+his own spec, followed by his own review and iteration — not from
+hand-writing each commit.
 
 - **Whitelisted server-side execution of free-text LLM output.**
   `/api/agent/chat` asks the model to return strict JSON (`{"reply": ...,
@@ -84,9 +91,10 @@ repo alone which of these decisions were made by you versus generated.
   `GET /auth/session` endpoint that silently creates-or-reuses one fixed
   `owner@momentum.app` account (given an unusable random password hash) and
   logs the caller in as that user — a single-user bypass that still reuses
-  every `user_id`-scoped query from multi-user mode. Flagged as a question
-  below since it's not obvious from the code alone which mode the app
-  actually runs in day to day.
+  every `user_id`-scoped query from multi-user mode. Confirmed by the repo
+  owner: this single-user auto-login is the mode actually used day to day;
+  the multi-user register/login flow exists in the code but isn't the
+  active path.
 - **Per-turn context assembly with explicit bounding.** Both the streaming
   coach and the tool-calling agent rebuild their system prompt from the
   user's *live* tasks/goals/notes on every single turn (not just chat
@@ -110,7 +118,11 @@ repo alone which of these decisions were made by you versus generated.
 
 ### Outcome
 
-_TODO — to be filled in._
+_TODO — to be filled in._ Confirmed so far: the repo owner uses Momentum
+himself, day to day. On the "100% tested" claim in `test_result.md` /
+`test_reports/iteration_*.json` — per the repo owner, that's not the
+platform's self-reported figure being taken at face value; he verified it
+himself by testing the app directly.
 
 ### What I'd do next
 
@@ -130,26 +142,16 @@ have none.
 
 ---
 
-## 3. Questions for Aksh
+## 3. Questions for Aksh — resolved
 
-1. **This one matters most.** Every commit before this portfolio-prep PR is
-   authored `emergent-agent-e1` with messages like `auto-commit for
-   <uuid>`, and `test_result.md` is a literal protocol file for an
-   autonomous "main_agent"/"testing_agent" workflow — this reads as an app
-   built on an AI app-building platform (Emergent) from the one-paragraph
-   prompt in `memory/PRD.md`, not hand-coded commit by commit. What was your
-   actual role — writing/refining that prompt, steering iterations, manual
-   debugging, something else? I don't want to represent this to a hiring
-   manager as hands-on engineering work if that's not accurate, and the
-   repo alone can't tell me which parts (if any) you wrote or edited
-   directly.
-2. Which auth mode does the app actually run in day to day — the
-   single-user `/auth/session` auto-login, or real multi-user
-   registration/login? That changes how I'd describe the product.
-3. `test_result.md` / `test_reports/iteration_*.json` record "100%
-   backend + 100% frontend" tested as of iteration 1 — is that an
-   independently verified result, or the platform's own self-reported
-   testing-agent output? I don't want to cite it as a verified metric
-   either way without checking with you.
-4. Do you actually use Momentum yourself day to day? That would shape
-   "Outcome" once you fill it in.
+The previous draft's four questions are now answered and incorporated above
+(authorship/framing in "What I built" and the Hard parts note, auth mode in
+Hard parts, the testing claim and daily use in Outcome). Recorded here for
+traceability:
+
+1. Role: wrote the product spec/prompt, directed the build on Emergent,
+   then reviewed and iterated on it himself.
+2. Auth mode in active use: single-user auto-login.
+3. The "100%" testing claim: not taken from the platform's self-report —
+   verified directly by the owner's own testing.
+4. Daily use: yes, uses Momentum himself day to day.
