@@ -41,6 +41,13 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 dump.rdb
+*.log
+logs/
+
+# Local databases (this project uses MongoDB, but cover local/sqlite dumps too)
+*.db
+*.sqlite
+*.sqlite3
 
 # System files
 .DS_Store
@@ -83,6 +90,7 @@ android-sdk/
 .env
 .env.*
 *.env
+!.env.example
 credentials.json
 *.key
 .credentials
