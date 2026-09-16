@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plan My Day</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232C4BE0'/%3E%3Cpath d='M9 16.5l4.5 4.5L23 11' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"
+    />
+    <style>
+      :root {
+        --bg: #f7f8fa;
+        --surface: #ffffff;
+        --ink: #14161a;
+        --muted: #5b616b;
+        --line: #dfe2e7;
+        --accent: #2c4be0;
+        --done: #0f8b5f;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      header {
+        border-bottom: 1px solid var(--line);
+        background: var(--surface);
+      }
+      .bar {
+        max-width: 960px; margin: 0 auto; padding: 14px 20px;
+        display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      }
+      .brand { font-weight: 650; letter-spacing: -0.01em; }
+      nav { display: flex; gap: 4px; flex-wrap: wrap; }
+      nav button {
+        background: none; border: 0; padding: 7px 12px; border-radius: 4px;
+        font: inherit; color: var(--muted); cursor: pointer;
+      }
+      nav button:hover { background: var(--bg); color: var(--ink); }
+      nav button[aria-current="true"] { background: var(--ink); color: #fff; }
+      main { max-width: 960px; margin: 0 auto; padding: 24px 20px 64px; }
+      section[hidden] { display: none; }
+      h2 { font-size: 1.1rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+      .sub { color: var(--muted); margin: 0 0 18px; font-size: 0.9rem; }
+      .card {
+        background: var(--surface); border: 1px solid var(--line);
+        border-radius: 6px; padding: 16px; margin-bottom: 12px;
+      }
+      .row { display: flex; gap: 10px; align-items: flex-start; }
+      .row + .row { margin-top: 10px; }
+      .grow { flex: 1; min-width: 0; }
+      input, textarea, select {
+        width: 100%; padding: 9px 11px; border: 1px solid var(--line);
+        border-radius: 4px; font: inherit; background: var(--surface); color: var(--ink);
+      }
+      textarea { resize: vertical; min-height: 68px; }
+      button.primary {
+        background: var(--accent); color: #fff; border: 0; padding: 9px 15px;
+        border-radius: 4px; font: inherit; cursor: pointer; white-space: nowrap;
+      }
+      button.ghost {
+        background: none; border: 1px solid var(--line); padding: 8px 13px;
+        border-radius: 4px; font: inherit; cursor: pointer; color: var(--ink); white-space: nowrap;
+      }
+      button:disabled { opacity: 0.55; cursor: progress; }
+      .item { border-top: 1px solid var(--line); padding: 13px 0; }
+      .item:first-of-type { border-top: 0; }
+      .item-head { display: flex; gap: 10px; align-items: baseline; justify-content: space-between; }
+      .title { font-weight: 550; }
+      .title.done { text-decoration: line-through; color: var(--muted); }
+      .meta { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
+      .pill {
+        display: inline-block; border: 1px solid var(--line); border-radius: 3px;
+        padding: 1px 7px; font-size: 0.72rem; color: var(--muted); margin-right: 6px;
+      }
+      .pill.high { border-color: #e0b4b4; color: #a33; }
+      .stats { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+      .stat { flex: 1; min-width: 120px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 13px 15px; }
+      .stat b { display: block; font-size: 1.5rem; font-weight: 650; letter-spacing: -0.02em; }
+      .stat span { color: var(--muted); font-size: 0.8rem; }
+      .chat-log { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; }
+      .msg { max-width: 82%; padding: 10px 13px; border-radius: 8px; white-space: pre-wrap; }
+      .msg.user { align-self: flex-end; background: var(--accent); color: #fff; }
+      .msg.assistant { align-self: flex-start; background: var(--surface); border: 1px solid var(--line); }
+      .empty { color: var(--muted); padding: 10px 0; }
+      .error {
+        background: #fdf1f1; border: 1px solid #e6c5c5; color: #8a2b2b;
+        padding: 11px 14px; border-radius: 5px; margin-bottom: 14px;
+      }
+      .error[hidden] { display: none; }
+      .focus { background: var(--surface); border-left: 3px solid var(--accent); padding: 13px 16px; margin-bottom: 14px; }
+      @media (max-width: 560px) { .row { flex-direction: column; } .msg { max-width: 100%; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="bar">
+        <span class="brand">Plan My Day</span>
+        <nav id="nav"></nav>
+      </div>
+    </header>
+
+    <main>
+      <div class="error" id="error" hidden></div>
+
+      <section id="view-today">
+        <h2>Today</h2>
+        <p class="sub">Ask the coach to choose and order today's work from your open tasks.</p>
+        <div class="stats" id="stats"></div>
+        <div class="row">
+          <div class="grow">
+            <label class="meta" for="capacity">Capacity today (minutes)</label>
+            <input id="capacity" type="number" value="240" min="30" max="960" step="30" />
+          </div>
+          <button class="primary" id="plan-btn" style="margin-top: 22px">Plan my day</button>
+        </div>
+        <div id="plan"></div>
+      </section>
+
+      <section id="view-goals" hidden>
+        <h2>Goals</h2>
+        <p class="sub">Add a goal, then let the coach break it into tasks you can actually start.</p>
+        <div class="card">
+          <div class="row">
+            <input class="grow" id="goal-title" placeholder="Goal title" />
+            <input id="goal-date" type="date" style="max-width: 170px" />
+          </div>
+          <div class="row">
+            <textarea class="grow" id="goal-desc" placeholder="What does done look like? (optional)"></textarea>
+          </div>
+          <div class="row"><button class="primary" id="goal-add">Add goal</button></div>
+        </div>
+        <div id="goals"></div>
+      </section>
+
+      <section id="view-tasks" hidden>
+        <h2>Tasks</h2>
+        <p class="sub">Everything on your plate, highest priority first.</p>
+        <div class="card">
+          <div class="row">
+            <input class="grow" id="task-title" placeholder="Task title" />
+            <select id="task-priority" style="max-width: 130px">
+              <option value="high">High</option>
+              <option value="medium" selected>Medium</option>
+              <option value="low">Low</option>
+            </select>
+            <button class="primary" id="task-add">Add</button>
+          </div>
+        </div>
+        <div id="tasks"></div>
+      </section>
+
+      <section id="view-notes" hidden>
+        <h2>Notes</h2>
+        <p class="sub">Think out loud. The coach reads your recent notes for context.</p>
+        <div class="card">
+          <div class="row"><input class="grow" id="note-title" placeholder="Title (optional)" /></div>
+          <div class="row"><textarea class="grow" id="note-content" placeholder="What's on your mind?"></textarea></div>
+          <div class="row"><button class="primary" id="note-add">Save note</button></div>
+        </div>
+        <div id="notes"></div>
+      </section>
+
+      <section id="view-coach" hidden>
+        <h2>Coach</h2>
+        <p class="sub">Grounded in your real tasks, goals and notes.</p>
+        <div class="chat-log" id="chat"></div>
+        <div class="row">
+          <input class="grow" id="chat-input" placeholder="What should I focus on this week?" />
+          <button class="primary" id="chat-send">Send</button>
+          <button class="ghost" id="chat-clear">Clear</button>
+        </div>
+      </section>
+
+      <section id="view-profile" hidden>
+        <h2>Profile</h2>
+        <p class="sub">Set once. Every coaching and breakdown prompt is built from this.</p>
+        <div class="card">
+          <div class="row">
+            <div class="grow">
+              <label class="meta" for="working_style">How you work best</label>
+              <textarea id="working_style" placeholder="e.g. deep work in the morning, shallow admin after 4pm"></textarea>
+            </div>
+          </div>
+          <div class="row">
+            <div class="grow">
+              <label class="meta" for="mindset">Mindset</label>
+              <textarea id="mindset" placeholder="e.g. I over-plan and under-ship; push me to start"></textarea>
+            </div>
+          </div>
+          <div class="row">
+            <div class="grow">
+              <label class="meta" for="preferences">Preferences</label>
+              <textarea id="preferences" placeholder="e.g. no meetings before 11, batch errands on Fridays"></textarea>
+            </div>
+          </div>
+          <div class="row"><button class="primary" id="profile-save">Save profile</button></div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const VIEWS = [
+        ['today', 'Today'],
+        ['goals', 'Goals'],
+        ['tasks', 'Tasks'],
+        ['notes', 'Notes'],
+        ['coach', 'Coach'],
+        ['profile', 'Profile'],
+      ];
+
+      const $ = (id) => document.getElementById(id);
+      const esc = (s) =>
+        String(s ?? '').replace(/[&<>"']/g, (c) =>
+          ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
+        );
+
+      function showError(message) {
+        const box = $('error');
+        box.textContent = message;
+        box.hidden = false;
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+
+      async function api(path, options = {}) {
+        $('error').hidden = true;
+        const response = await fetch(`/api${path}`, {
+          headers: { 'Content-Type': 'application/json' },
+          ...options,
+        });
+        if (!response.ok) {
+          let detail = `${response.status} ${response.statusText}`;
+          try {
+            const body = await response.json();
+            if (body.detail) detail = typeof body.detail === 'string' ? body.detail : detail;
+          } catch {}
+          throw new Error(detail);
+        }
+        return response.status === 204 ? null : response.json();
+      }
+
+      async function withBusy(button, label, fn) {
+        const original = button.textContent;
+        button.disabled = true;
+        button.textContent = label;
+        try {
+          await fn();
+        } catch (err) {
+          showError(err.message);
+        } finally {
+          button.disabled = false;
+          button.textContent = original;
+        }
+      }
+
+      // --- navigation ---------------------------------------------------
+      function go(view) {
+        VIEWS.forEach(([key]) => {
+          $(`view-${key}`).hidden = key !== view;
+          $(`nav-${key}`).setAttribute('aria-current', String(key === view));
+        });
+        location.hash = view;
+        ({ today: loadToday, goals: loadGoals, tasks: loadTasks, notes: loadNotes, coach: loadChat, profile: loadProfile })[view]();
+      }
+
+      $('nav').innerHTML = VIEWS.map(
+        ([key, label]) => `<button id="nav-${key}">${label}</button>`
+      ).join('');
+      VIEWS.forEach(([key]) => ($(`nav-${key}`).onclick = () => go(key)));
+
+      // --- today --------------------------------------------------------
+      async function loadToday() {
+        const s = await api('/stats');
+        $('stats').innerHTML = `
+          <div class="stat"><b>${s.tasks_open}</b><span>open tasks</span></div>
+          <div class="stat"><b>${s.completion_rate}%</b><span>completed</span></div>
+          <div class="stat"><b>${s.goals_active}</b><span>active goals</span></div>
+          <div class="stat"><b>${s.notes_total}</b><span>notes</span></div>`;
+      }
+
+      $('plan-btn').onclick = () =>
+        withBusy($('plan-btn'), 'Thinking…', async () => {
+          const capacity = Number($('capacity').value) || 240;
+          const plan = await api(`/plan-day?capacity=${capacity}`, { method: 'POST' });
+          $('plan').innerHTML =
+            `<div class="focus">${esc(plan.focus)}</div>` +
+            (plan.items.length
+              ? `<div class="card">${plan.items
+                  .map(
+                    (item) => `<div class="item">
+                      <div class="item-head">
+                        <span class="title">${esc(item.task.title)}</span>
+                        <span class="meta">${item.task.estimated_minutes}m</span>
+                      </div>
+                      <div class="meta">${esc(item.reason)}</div>
+                    </div>`
+                  )
+                  .join('')}</div>`
+              : '');
+        });
+
+      // --- goals --------------------------------------------------------
+      async function loadGoals() {
+        const goals = await api('/goals');
+        $('goals').innerHTML = goals.length
+          ? goals
+              .map(
+                (g) => `<div class="card">
+                  <div class="item-head">
+                    <span class="title">${esc(g.title)}</span>
+                    <span class="meta">${g.task_done}/${g.task_total} done${
+                      g.target_date ? ` · by ${esc(g.target_date)}` : ''
+                    }</span>
+                  </div>
+                  ${g.description ? `<div class="meta">${esc(g.description)}</div>` : ''}
+                  <div class="row" style="margin-top:10px">
+                    <button class="primary" data-break="${g.id}">Break into tasks</button>
+                    <button class="ghost" data-del-goal="${g.id}">Delete</button>
+                  </div>
+                </div>`
+              )
+              .join('')
+          : '<p class="empty">No goals yet.</p>';
+
+        $('goals')
+          .querySelectorAll('[data-break]')
+          .forEach((btn) => {
+            btn.onclick = () =>
+              withBusy(btn, 'Breaking down…', async () => {
+                const result = await api(`/goals/${btn.dataset.break}/breakdown`, { method: 'POST' });
+                await loadGoals();
+                showPlainMessage(`Added ${result.tasks.length} tasks — see the Tasks tab.`);
+              });
+          });
+        $('goals')
+          .querySelectorAll('[data-del-goal]')
+          .forEach((btn) => {
+            btn.onclick = () =>
+              withBusy(btn, 'Deleting…', async () => {
+                await api(`/goals/${btn.dataset.delGoal}`, { method: 'DELETE' });
+                await loadGoals();
+              });
+          });
+      }
+
+      function showPlainMessage(text) {
+        const box = $('error');
+        box.textContent = text;
+        box.style.background = '#f1f7f3';
+        box.style.borderColor = '#c3ddcd';
+        box.style.color = '#1d6b45';
+        box.hidden = false;
+        setTimeout(() => {
+          box.hidden = true;
+          box.style.cssText = '';
+        }, 4000);
+      }
+
+      $('goal-add').onclick = () =>
+        withBusy($('goal-add'), 'Adding…', async () => {
+          const title = $('goal-title').value.trim();
+          if (!title) return showError('A goal needs a title.');
+          await api('/goals', {
+            method: 'POST',
+            body: JSON.stringify({
+              title,
+              description: $('goal-desc').value.trim(),
+              target_date: $('goal-date').value || null,
+            }),
+          });
+          $('goal-title').value = $('goal-desc').value = $('goal-date').value = '';
+          await loadGoals();
+        });
+
+      // --- tasks --------------------------------------------------------
+      async function loadTasks() {
+        const tasks = await api('/tasks');
+        $('tasks').innerHTML = tasks.length
+          ? `<div class="card">${tasks
+              .map(
+                (t) => `<div class="item">
+                  <div class="item-head">
+                    <span class="title ${t.status === 'done' ? 'done' : ''}">${esc(t.title)}</span>
+                    <span class="meta">${t.estimated_minutes}m</span>
+                  </div>
+                  <div style="margin-top:6px">
+                    <span class="pill ${t.priority}">${t.priority}</span>
+                    <span class="pill">${t.status.replace('_', ' ')}</span>
+                  </div>
+                  <div class="row" style="margin-top:9px">
+                    ${
+                      t.status !== 'done'
+                        ? `<button class="ghost" data-done="${t.id}">Mark done</button>`
+                        : `<button class="ghost" data-reopen="${t.id}">Reopen</button>`
+                    }
+                    <button class="ghost" data-del-task="${t.id}">Delete</button>
+                  </div>
+                </div>`
+              )
+              .join('')}</div>`
+          : '<p class="empty">Nothing here yet.</p>';
+
+        const rebind = (attr, patch) =>
+          $('tasks')
+            .querySelectorAll(`[data-${attr}]`)
+            .forEach((btn) => {
+              btn.onclick = () =>
+                withBusy(btn, '…', async () => {
+                  const id = btn.dataset[attr.replace(/-./g, (m) => m[1].toUpperCase())];
+                  if (patch === null) await api(`/tasks/${id}`, { method: 'DELETE' });
+                  else
+                    await api(`/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+                  await loadTasks();
+                });
+            });
+        rebind('done', { status: 'done' });
+        rebind('reopen', { status: 'todo' });
+        rebind('del-task', null);
+      }
+
+      $('task-add').onclick = () =>
+        withBusy($('task-add'), 'Adding…', async () => {
+          const title = $('task-title').value.trim();
+          if (!title) return showError('A task needs a title.');
+          await api('/tasks', {
+            method: 'POST',
+            body: JSON.stringify({ title, priority: $('task-priority').value }),
+          });
+          $('task-title').value = '';
+          await loadTasks();
+        });
+
+      // --- notes --------------------------------------------------------
+      async function loadNotes() {
+        const notes = await api('/notes');
+        $('notes').innerHTML = notes.length
+          ? notes
+              .map(
+                (n) => `<div class="card">
+                  <div class="item-head">
+                    <span class="title">${esc(n.title || 'Untitled')}</span>
+                    <span class="meta">${esc(n.created_at.slice(0, 10))}</span>
+                  </div>
+                  <div style="margin-top:6px;white-space:pre-wrap">${esc(n.content)}</div>
+                  <div class="row" style="margin-top:9px">
+                    <button class="ghost" data-del-note="${n.id}">Delete</button>
+                  </div>
+                </div>`
+              )
+              .join('')
+          : '<p class="empty">No notes yet.</p>';
+
+        $('notes')
+          .querySelectorAll('[data-del-note]')
+          .forEach((btn) => {
+            btn.onclick = () =>
+              withBusy(btn, '…', async () => {
+                await api(`/notes/${btn.dataset.delNote}`, { method: 'DELETE' });
+                await loadNotes();
+              });
+          });
+      }
+
+      $('note-add').onclick = () =>
+        withBusy($('note-add'), 'Saving…', async () => {
+          const content = $('note-content').value.trim();
+          if (!content) return showError('A note needs some content.');
+          await api('/notes', {
+            method: 'POST',
+            body: JSON.stringify({ title: $('note-title').value.trim(), content }),
+          });
+          $('note-title').value = $('note-content').value = '';
+          await loadNotes();
+        });
+
+      // --- coach --------------------------------------------------------
+      async function loadChat() {
+        const messages = await api('/chat');
+        $('chat').innerHTML = messages.length
+          ? messages.map((m) => `<div class="msg ${m.role}">${esc(m.content)}</div>`).join('')
+          : '<p class="empty">Ask the coach anything about your current workload.</p>';
+        $('chat').scrollIntoView({ block: 'end' });
+      }
+
+      $('chat-send').onclick = () =>
+        withBusy($('chat-send'), 'Thinking…', async () => {
+          const message = $('chat-input').value.trim();
+          if (!message) return;
+          $('chat-input').value = '';
+          await api('/chat', { method: 'POST', body: JSON.stringify({ message }) });
+          await loadChat();
+        });
+
+      $('chat-input').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') $('chat-send').click();
+      });
+
+      $('chat-clear').onclick = () =>
+        withBusy($('chat-clear'), '…', async () => {
+          await api('/chat', { method: 'DELETE' });
+          await loadChat();
+        });
+
+      // --- profile ------------------------------------------------------
+      async function loadProfile() {
+        const p = await api('/profile');
+        $('working_style').value = p.working_style || '';
+        $('mindset').value = p.mindset || '';
+        $('preferences').value = p.preferences || '';
+      }
+
+      $('profile-save').onclick = () =>
+        withBusy($('profile-save'), 'Saving…', async () => {
+          await api('/profile', {
+            method: 'PUT',
+            body: JSON.stringify({
+              working_style: $('working_style').value,
+              mindset: $('mindset').value,
+              preferences: $('preferences').value,
+            }),
+          });
+          showPlainMessage('Profile saved.');
+        });
+
+      // --- boot ---------------------------------------------------------
+      const start = location.hash.replace('#', '');
+      go(VIEWS.some(([k]) => k === start) ? start : 'today');
+    </script>
+  </body>
+</html>

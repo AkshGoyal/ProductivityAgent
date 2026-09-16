@@ -94,3 +94,7 @@ android-sdk/
 credentials.json
 *.key
 .credentials
+
+# Local database and virtualenv
+planmyday.db
+.venv/
