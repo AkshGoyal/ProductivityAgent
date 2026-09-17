@@ -1,71 +1,92 @@
-# Momentum
+# Plan My Day
 
-An AI productivity coach that turns a goal into a concrete task list, tracks
-your tasks and notes, and chats with you about what to work on next —
-calibrated to how you actually work.
+A personal productivity coach: you give it a goal, it breaks the goal into
+tasks small enough to actually start, and it tells you which of them to do
+today — calibrated to how you work rather than to generic advice.
 
-## The problem it solves
+Single-user tool that runs on your own machine. Your tasks, goals and notes
+stay in a SQLite file you own.
 
-Most task managers make you do the hard part yourself: turning a vague goal
-("get fit", "ship the v1") into a concrete, doable plan. Momentum asks about
-your working style and mindset once, then uses that context every time it
-breaks a goal into atomic tasks or chats with you as a coach — so the
-suggestions are calibrated to you instead of generic advice.
+## What it does
 
-## Tech stack
+- **Goal breakdown** — turn "launch the newsletter" into 5–8 concrete tasks,
+  each sized for one focused sitting.
+- **Plan my day** — pick and order today's work from everything that's open,
+  against the time you actually have.
+- **Coach chat** — talk through what's stuck, grounded in your real tasks,
+  goals and notes rather than invented context.
+- **Profile** — describe your working style and mindset once; every prompt is
+  built from it.
+- **Notes** — think out loud; recent notes feed the coach's context.
 
-- **Frontend**: React, Tailwind CSS, shadcn/ui, react-router, react-query
-- **Backend**: FastAPI (Python 3.11), Motor (async MongoDB driver)
-- **Database**: MongoDB
-- **Auth**: JWT in an httpOnly cookie, bcrypt password hashing
-- **AI**: `emergentintegrations` LLM client (Anthropic Claude) for goal
-  breakdown (structured JSON) and a streaming (SSE) coach chat
-- **Testing**: pytest (backend), CRA/craco test runner (frontend)
+## Stack
 
-## How to run it locally
+Python 3.11 · FastAPI · SQLite (stdlib `sqlite3`) · Google Gemini via
+`google-genai` · one static HTML page, no build step.
 
-Requires Python 3.11+, Node.js, and a MongoDB instance (local or hosted).
+## Run it
 
 ```bash
-# Backend
-cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp ../.env.example .env   # fill in MONGO_URL, DB_NAME, JWT_SECRET,
-                           # EMERGENT_LLM_KEY, FRONTEND_URL
-uvicorn server:app --reload --port 8000
 
-# Frontend (separate terminal)
-cd frontend
-yarn install   # or npm install
-cp ../.env.example .env   # fill in REACT_APP_BACKEND_URL (e.g. http://localhost:8000)
-yarn start     # or npm start — http://localhost:3000
+cp .env.example .env          # add your GEMINI_API_KEY
+export $(grep -v '^#' .env | xargs)
+
+python -m app.main            # http://127.0.0.1:8000
 ```
 
-Run backend tests with `pytest` from `backend/` (requires `REACT_APP_BACKEND_URL`
-pointed at a running backend).
+Run the tests with `pytest`. The LLM client is mocked throughout, so the suite
+needs no API key and makes no live calls.
 
-## Architecture
+## How it's built
 
 ```
-frontend/   React SPA (pages: Landing, Login/Register, Dashboard, Tasks,
-            Goals, Notes, Chat, Profile) — talks to the backend only via
-            REACT_APP_BACKEND_URL, all requests under /api
-backend/    FastAPI app (server.py) — auth, tasks, goals, notes, dashboard
-            stats, and two AI endpoints:
-              POST /api/ai/breakdown-goal   goal -> 5-8 tasks (JSON)
-              GET  /api/chat/stream         coach chat (SSE)
-            reads/writes MongoDB via Motor; JWT auth via httpOnly cookie
-MongoDB     stores users, tasks, goals, notes, chat_messages
+app/config.py    every setting in one place — model, paths, context limits
+app/db.py        SQLite schema and connection; re-runnable migrations
+app/models.py    Pydantic models: HTTP contracts and LLM output schemas
+app/llm.py       the single wrapper every Gemini call goes through
+app/context.py   database rows -> the bounded text blocks prompts interpolate
+app/prompts/     prompt templates as files, not f-strings in the routes
+app/repo.py      every SQL statement in the project
+app/api.py       routes, all under /api
+static/          one page, vanilla JS
 ```
 
-The frontend never talks to the LLM or MongoDB directly — everything goes
-through the FastAPI backend, which is the only service holding the database
-connection and the LLM key. The AI endpoints build their prompts from the
-user's stored profile (working style, mindset, preferences) plus their
-current tasks/goals, so every AI response is grounded in that user's own
-data.
+Deterministic code does the work; the model is called only where judgment is
+needed — breaking a goal down, ordering a day, coaching. Three design rules
+hold that together:
 
-## Screenshots
+**Structured output, never string-parsing.** Each LLM call passes a Pydantic
+model as Gemini's `response_schema` and gets a validated instance back.
+Enumerated fields are `Literal[...]`, so the model cannot return a priority or
+status the database would reject. Nothing parses model output with a regex.
 
-<!-- TODO: add screenshots of the dashboard, goal breakdown, and coach chat -->
+**Verify against the database, don't trust the model.** `plan-day` asks for
+task ids and then checks every one against real rows, dropping anything it
+doesn't recognise — a hallucinated id can't reach the UI. There's a test for
+exactly that.
+
+**Bounded context.** Prompts are built from capped queries, so prompt size
+stays predictable as the database grows.
+
+### On retries
+
+`google-genai` makes exactly one attempt per call and raises immediately on a
+429 or a transient 503, unlike some other SDKs. `llm.get_client()` sets
+`HttpRetryOptions` explicitly so overload becomes a retry rather than a failed
+request, and a test asserts the option is set so it can't regress quietly.
+
+### Security note
+
+There is no auth layer — this is a single-user local tool, and it binds to
+`127.0.0.1` for that reason. Don't expose it on a public interface without
+adding authentication first.
+
+## History
+
+This started life on a hosted AI app-building platform as a React + MongoDB
+app. It was rebuilt here on FastAPI + SQLite + Gemini: a stack I run myself,
+with schema-enforced model output, real retry behaviour, and a test suite in
+place of the generated version's regex parsing and unguarded calls. The
+original implementation is in this repository's git history.
