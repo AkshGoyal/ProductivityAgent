@@ -1,4 +1,0 @@
-/* App-level layout overrides. No text-align:center on the root. */
-.App {
-    min-height: 100vh;
-}
